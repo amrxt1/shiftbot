@@ -10,12 +10,13 @@ from imapclient import IMAPClient
 
 # misc
 import time
+import email
 
 load_dotenv()
 
 
 class Shiftbot:
-    def __init__(self):
+    def __init__(self, headless=False):
         # keyword to look for
         self.keyword = os.getenv("SHIFTBOT_KEYWORD")
 
@@ -24,7 +25,7 @@ class Shiftbot:
         self.email = os.getenv("SHIFTBOT_EMAIL")
         self.password = os.getenv("SHIFTBOT_PASS")
         # imap
-        self.client = IMAPClient(self.host)
+        self.client = IMAPClient(self.host, use_uid=False)
         self.client.login(self.email, self.password)
         self.client.select_folder("INBOX")
 
@@ -32,7 +33,7 @@ class Shiftbot:
         self.pw = sync_playwright().start()
         self.browser = self.pw.chromium.launch_persistent_context(
             user_data_dir="./profile",
-            headless=False,
+            headless=headless,
             locale="en-CA",
             args=["--start-maximized"],
             viewport=None,
@@ -84,14 +85,26 @@ class Shiftbot:
         # notify
 
     def run(self):
-        input("Bot Ready")
+        input(self)
         self.client.idle()
-        input("Client in IDLE mode")
+        input("IMAPClient in IDLE mode")
         while True:
             try:
                 responses = self.client.idle_check(timeout=5)
                 print("Server sent:", responses if responses else "nothing")
                 time.sleep(0.1)
+
+                if responses:
+                    self.client.idle_done()
+                    for uid1, flag in responses:
+                        if flag == b"EXISTS":
+                            for uid2, message_data in self.client.fetch(
+                                uid1, "RFC822"
+                            ).items():
+                                msg = email.message_from_bytes(message_data[b"RFC822"])
+                                print(msg)
+                    self.client.idle()
+
             except KeyboardInterrupt:
                 break
 
@@ -104,6 +117,7 @@ class Shiftbot:
             print(f"Could not stop Playwright: {e}")
 
         try:
+            self.client.idle_done()
             self.client.logout()
         except Exception as e:
             print(f"Could not logout from IMAP: {e}")

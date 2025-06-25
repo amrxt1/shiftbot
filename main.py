@@ -1,7 +1,7 @@
 from shiftbot import Shiftbot
 
 
-bot = Shiftbot()
+bot = Shiftbot(headless=True)
 try:
     bot.run()
 except KeyboardInterrupt:
