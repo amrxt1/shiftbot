@@ -46,6 +46,7 @@ class Shiftbot:
         self.page.goto("https://google.com")
 
         # portal creds
+        self.portal_url = os.getenv("SHIFTBOT_PORTAL_URL")
         self.portal_password = os.getenv("SHIFTBOT_LOGIN_PASS")
 
     def stealthify(self, page):
@@ -60,8 +61,8 @@ class Shiftbot:
     def handle_shift_link(self, url: str):
         page = self.page
 
-        page.goto(url)
-        input("Page ready")
+        input("Page ready. Logging in...")
+        page.goto(self.portal_url)
 
         # enter portal email
         page.fill(".email_input", os.getenv("SHIFTBOT_EMAIL"))
@@ -75,6 +76,9 @@ class Shiftbot:
         page.press(".password_input", "Enter")
         input("Logged in")
 
+        # on shift page
+        page.goto(url)
+
         # press first button
         page.click("button[name='cover']")
         input("Past stage 1")
@@ -85,6 +89,11 @@ class Shiftbot:
 
         page.goto("https://app.shiftboard.com/servola/logout.cgi?logout=1")
         # notify
+
+    @staticmethod
+    def unique(seq):
+        seen = set()
+        return [x for x in seq if not (x in seen or seen.add(x))]
 
     def extract_shift_links_from_msg(self, msg):
         links = []
@@ -117,7 +126,7 @@ class Shiftbot:
                     )
                 )
 
-        return links
+        return self.unique(links)
 
     def run(self):
         input(self)
