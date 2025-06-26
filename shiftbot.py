@@ -58,37 +58,37 @@ class Shiftbot:
         }""")
         return 0
 
-    def handle_shift_link(self, url: str):
+    def handle_shift_link(self, urls: list[str]):
         page = self.page
 
-        input("Page ready. Logging in...")
         page.goto(self.portal_url)
 
         # enter portal email
         page.fill(".email_input", os.getenv("SHIFTBOT_EMAIL"))
-        input("Email Entered")
 
         # enter portal pass
         page.fill(".password_input", os.getenv("SHIFTBOT_LOGIN_PASS"))
-        input("Password entered")
 
         # login
         page.press(".password_input", "Enter")
-        input("Logged in")
 
-        # on shift page
-        page.goto(url)
+        for url in urls:
+            if isinstance(url, str):
+                try:
+                    # on shift page
+                    page.goto(url)
 
-        # press first button
-        page.click("button[name='cover']")
-        input("Past stage 1")
+                    # press first button
+                    page.click("button[name='cover']")
 
-        # press second button
-        page.click("button[name='confirm_coverage']")
-        input("We're done here...Sending notification and logging out")
+                    # press second button
+                    page.click("button[name='confirm_coverage']")
+                    # notify
+                except Exception as e:
+                    print(f"Exception occured while handling {url}\n", e)
 
+        # logout
         page.goto("https://app.shiftboard.com/servola/logout.cgi?logout=1")
-        # notify
 
     @staticmethod
     def unique(seq):
@@ -153,11 +153,7 @@ class Shiftbot:
                                     )
                                     links = self.extract_shift_links_from_msg(msg)
                                     print(f"Links harvested:\n{links}")
-                                    for link in links:
-                                        process = input(f"{link}  ? [y/n]\n>")
-                                        if process == "y":
-                                            if isinstance(link, str):
-                                                self.handle_shift_link(link)
+                                    self.handle_shift_link(links)
                     self.client.idle()
                     time.sleep(0.25)
 
