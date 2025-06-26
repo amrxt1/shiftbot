@@ -80,8 +80,12 @@ class Shiftbot:
         }""")
         return 0
 
-    def handle_shift_link(self, urls: list[str]):
+    def handle_shift_links(self, urls: list[str]):
         page = self.page
+        shift_acquired = False
+
+        # make sure we start at logged out state
+        page.goto("https://app.shiftboard.com/servola/logout.cgi?logout=1")
 
         page.goto(self.portal_url)
         logging.info(f"Arrived at portal login. Working with: {len(urls)} URLs")
@@ -117,11 +121,14 @@ class Shiftbot:
                     logging.info("Sending notification.")
                     self.n.notify(f"Shift acquired!\nCheck details: {url}")
 
+                    shift_acquired = True
+
                 except Exception as e:
                     logging.exception(f"Exception occured while handling {url}\n{e}")
 
         # logout
         page.goto("https://app.shiftboard.com/servola/logout.cgi?logout=1")
+        return shift_acquired
 
     @staticmethod
     def unique(seq):
@@ -174,7 +181,17 @@ class Shiftbot:
         logging.info(self)
         self.client.idle()
         logging.info("IMAPClient logged in and in IDLE mode.")
-        self.n.notify("We are Live!")
+        logging.info(f"We are looking for: {self.keywords}")
+
+        if not self.keywords or self.keywords == [""]:
+            logging.warning("No keywords defined. Shiftbot will match everything.")
+
+        # self.n.notify("We are Live!")
+
+        # log out before checking incase there is a session from previous run
+        self.page.goto("https://app.shiftboard.com/servola/logout.cgi?logout=1")
+
+        # run the eternal loop
         while True:
             try:
                 # watch out for new mail
@@ -207,8 +224,14 @@ class Shiftbot:
 
                                     # if there are any links, handle them or keep looking
                                     if links:
-                                        self.handle_shift_link(links)
-                                        return 0
+                                        try:
+                                            if self.handle_shift_links(urls=links):
+                                                return 0
+                                        except Exception as e:
+                                            logging.exception(
+                                                f"Exception occured while taking the shift {e}"
+                                            )
+                                            continue
                     self.client.idle()
                     time.sleep(0.25)
 
