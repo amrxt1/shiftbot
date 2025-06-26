@@ -37,7 +37,9 @@ logging.basicConfig(
 class Shiftbot:
     def __init__(self, headless=False):
         # keyword to look for
-        self.keyword = os.getenv("SHIFTBOT_KEYWORD")
+        self.keywords = [
+            k.strip().lower() for k in (os.getenv("SHIFTBOT_KEYWORD") or "").split(",")
+        ]
 
         # imap creds
         self.host = os.getenv("SHIFTBOT_HOST")
@@ -128,6 +130,16 @@ class Shiftbot:
 
     def extract_shift_links_from_msg(self, msg):
         links = []
+        body_text = ""
+
+        # log sender and subject
+        sender = msg.get("From", "Unknown Sender")
+        subject = msg.get("Subject", "No Subject")
+        logging.info(f"Email From: {sender}")
+        logging.info(f"Subject: {subject}")
+
+        # get keywords from .env
+        keywords = self.keywords
 
         if msg.is_multipart():
             for part in msg.walk():
@@ -138,24 +150,23 @@ class Shiftbot:
                         decoded = payload.decode(
                             part.get_content_charset() or "utf-8", errors="replace"
                         )
-                        links.extend(
-                            re.findall(
-                                r"https://shiftboard\.com/go/guardteck/shifts/\d+",
-                                unescape(decoded),
-                            )
-                        )
+                        body_text += unescape(decoded)
         else:
             payload = msg.get_payload(decode=True)
             if payload:
                 decoded = payload.decode(
                     msg.get_content_charset() or "utf-8", errors="replace"
                 )
-                links.extend(
-                    re.findall(
-                        r"https://shiftboard\.com/go/guardteck/shifts/\d+",
-                        unescape(decoded),
-                    )
-                )
+                body_text += unescape(decoded)
+
+        # keyword filtering
+        if any(keyword in body_text.lower() for keyword in keywords):
+            links = re.findall(
+                r"https://shiftboard\.com/go/guardteck/shifts/\d+",
+                body_text,
+            )
+        else:
+            logging.info("No keywords matched. Skipping email.")
 
         return self.unique(links)
 
@@ -166,28 +177,38 @@ class Shiftbot:
         self.n.notify("We are Live!")
         while True:
             try:
+                # watch out for new mail
                 responses = self.client.idle_check(timeout=5)
                 logging.info(f"Server sent: {responses if responses else 'nothing'}")
                 time.sleep(0.1)
 
+                # if anything in response
                 if responses:
                     self.client.idle_done()
+                    # iterate over the responses
                     for response in responses:
+                        # make sure we only deal with b'EXISTS'
                         if isinstance(response, tuple) and len(response) == 2:
                             seq, flag = response
                             if flag == b"EXISTS":
+                                # fetch the message data for SEQ: seq
                                 logging.info(f"Processing SEQ: {seq}")
                                 for uid, message_data in self.client.fetch(
                                     seq, "RFC822"
                                 ).items():
+                                    # convert bytes into a message using email
                                     msg = email.message_from_bytes(
                                         message_data[b"RFC822"]
                                     )
+                                    # look for any useful links and make sure there's at least one keyword
                                     logging.info(f"Message Data Recieved for SEQ-{seq}")
                                     links = self.extract_shift_links_from_msg(msg)
                                     logging.info(f"Links harvested:  {links}")
-                                    self.handle_shift_link(links)
-                                    return 0
+
+                                    # if there are any links, handle them or keep looking
+                                    if links:
+                                        self.handle_shift_link(links)
+                                        return 0
                     self.client.idle()
                     time.sleep(0.25)
 
@@ -206,7 +227,6 @@ class Shiftbot:
             logging.exception(f"Could not stop Playwright: {e}")
 
         try:
-            self.client.idle_done()
             self.client.logout()
         except Exception as e:
             logging.exception(f"Could not logout from IMAP: {e}")
