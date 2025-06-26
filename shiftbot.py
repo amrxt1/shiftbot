@@ -178,6 +178,10 @@ class Shiftbot:
         return self.unique(links)
 
     def run(self):
+        # track IDLE time
+        idle_start = time.time()
+        IDLE_TIMEOUT = 9 * 60  # renew every 9 minutes
+
         logging.info(self)
         self.client.idle()
         logging.info("IMAPClient logged in and in IDLE mode.")
@@ -194,6 +198,12 @@ class Shiftbot:
         # run the eternal loop
         while True:
             try:
+                if time.time() - idle_start > IDLE_TIMEOUT:
+                    self.client.idle_done()
+                    logging.info("Renewing IDLE session.")
+                    self.client.idle()
+                    idle_start = time.time()
+
                 # watch out for new mail
                 responses = self.client.idle_check(timeout=5)
                 logging.info(f"Server sent: {responses if responses else 'nothing'}")
@@ -201,13 +211,13 @@ class Shiftbot:
 
                 # if anything in response
                 if responses:
-                    self.client.idle_done()
                     # iterate over the responses
                     for response in responses:
                         # make sure we only deal with b'EXISTS'
                         if isinstance(response, tuple) and len(response) == 2:
                             seq, flag = response
                             if flag == b"EXISTS":
+                                self.client.idle_done()
                                 # fetch the message data for SEQ: seq
                                 logging.info(f"Processing SEQ: {seq}")
                                 for uid, message_data in self.client.fetch(
@@ -250,6 +260,7 @@ class Shiftbot:
             logging.exception(f"Could not stop Playwright: {e}")
 
         try:
+            self.client.idle_done()
             self.client.logout()
         except Exception as e:
             logging.exception(f"Could not logout from IMAP: {e}")
